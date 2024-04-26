@@ -8,7 +8,7 @@ import pandas as pd
 
 
 class ImpromptuDataset(Dataset):
-    def __init__(self, df_dict: dict, img_col: str = 'png_path', transform=None):
+    def __init__(self, df_dict: dict, img_col: str = '__target_path', transform=None):
         self.transform = transform
 
         # load the dataframes into one merged one
