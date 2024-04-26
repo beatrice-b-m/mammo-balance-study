@@ -24,13 +24,14 @@ class HyperParamOptimizer:
         self.device = None
         # self.loader_dict = None
         self.model_name = None
-        self.model_func = None
+        self.model_type = None
         self.objective_function = None
 
         self.df_pool_dict = None
         self.mask_factor = None
         self.batch_size = None
         self.transform = None
+        self.bootstrap_prop = None
 
         # df_pool_dict should look like:
         # {
@@ -47,22 +48,17 @@ class HyperParamOptimizer:
         # }
         
         
-    def load_data(self, df_pool_dict: dict, mask_factor: str, batch_size: int, augment_dict: dict):
+    def load_data(self, df_pool_dict: dict, batch_size: int, augment_dict: dict, bootstrap_prop: float = 0.7):
+        self.bootstrap_prop = bootstrap_prop
+
         self.df_pool_dict = df_pool_dict
-        self.mask_factor = mask_factor
         self.batch_size = batch_size
         self.transform = get_augment_list(augment_dict)
         print("Data loaded...")
         
-    def set_model(self, device, model_func):
-        """
-        device, model, loader_dict, metric_collection, criterion,
-        optimizer, n_epochs: int, save_dir, str or None = None,
-        monitor_metric: str = "val_loss"
-        """
-        
+    def set_model(self, device, model_type):        
         self.device = device
-        self.model_func = model_func
+        self.model_type = model_type
                 
     def optimize(self, objective, n_random: int, n_guided: int, model_name: str):
         # set the seed at the start of the optimization so each sequential 
@@ -113,23 +109,26 @@ class HyperParamOptimizer:
         
         log_data(best_param_dict, metrics_dict.test, final=True)
 
-    def _get_bootstrap_dataloader(self, seed, img_col: str = 'png_path'):
-        pos_train = self.df_pool_dict['pos']['train'].sample(self.train_n, seed)
-        pos_val = self.df_pool_dict['pos']['val'].sample(self.val_n, seed)
-        pos_test = self.df_pool_dict['pos']['test'].sample(self.test_n, seed)
+    def _get_bootstrap_dataloader(self, seed, img_col: str = '__target_path'):
+        # calculate the set size based on the chosen bootstrap proportion
+        train_n = int(self.bootstrap_prop * len(self.df_pool_dict['pos']['train']))
+        val_n = int(self.bootstrap_prop * len(self.df_pool_dict['pos']['val']))
+
+        pos_train = self.df_pool_dict['pos']['train'].sample(train_n, random_state=seed)
+        pos_val = self.df_pool_dict['pos']['val'].sample(val_n, random_state=seed)
 
         if self.balance:
             neg_train = self._balance_negative(pos_train, self.df_pool_dict['neg']['train'])
             neg_val = self._balance_negative(pos_val, self.df_pool_dict['neg']['val'])
 
         else:
-            neg_train = self.df_pool_dict['neg']['train'].sample(self.train_n, seed)
-            neg_val = self.df_pool_dict['neg']['val'].sample(self.val_n, seed)
+            neg_train = self.df_pool_dict['neg']['train'].sample(train_n, random_state=seed)
+            neg_val = self.df_pool_dict['neg']['val'].sample(val_n, random_state=seed)
 
-        # use the full neg test set we provide HANDLE THIS BEFOREHAND
+        # use the full pos/neg test sets we provide
+        pos_test = self.df_pool_dict['pos']['test']
         neg_test = self.df_pool_dict['neg']['test']
 
-        # NEED TO PARSE THE IMG_COL AT SOME POINT SO IT"S ACTUALLY CORRECT!!!!!!
         train_ds = ImpromptuDataset(
             {'pos':pos_train, 'neg':neg_train}, 
             img_col=img_col, 
@@ -197,24 +196,24 @@ class HyperParamOptimizer:
 
         for i, seed in enumerate(bootstrap_seeds):
 
-            loader_dict = self.get_bootstrap_loader(seed)
+            loader_dict = self._get_bootstrap_dataloader(seed)
 
-            eval_metric = self._temp_obj_wrapper(loader_dict, kwargs)
+            eval_metric = self.bootstrap_objective(loader_dict, kwargs)
             print(f'bootstrap {i}: {eval_metric:.4f}')
             run_evals.append(eval_metric)
 
         return np.mean(run_evals)
     
-    def _temp_obj_wrapper(self, loader_dict, kwargs): # i need to think of a name for this
+    def bootstrap_objective(self, loader_dict, kwargs): # i need to think of a name for this
         history = self.objective_function(
-            model_func=self.model_func, 
+            model_type=self.model_type, 
             device=self.device, 
             loader_dict=loader_dict, 
             n_epochs=self.epochs_per_run, 
             save_dir=f"temp_{self.model_name}/", 
             monitor_metric=self.val_monitor_metric,
             seed=self.seed,
-            model_pdict=kwargs,
+            kwargs=kwargs,
             last_phase="val" # tune on the validation set so we don't overfit to test set
         )
         # it's still called .test tho... so still load it the same way so i don't have to change all the code

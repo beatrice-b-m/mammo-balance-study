@@ -13,21 +13,22 @@ class ImpromptuDataset(Dataset):
 
         # load the dataframes into one merged one
         merge_df = self._merge_dataframes(df_dict['pos'], df_dict['neg'])
+        merge_df.reset_index(drop=True, inplace=True)
 
         # store the image paths and class labels
         self.path_list = list(merge_df[img_col])
         self.label_list = list(merge_df['__class'])
 
-    def _merge_dataframes(pos_df, neg_df):
+    def _merge_dataframes(self, pos_df: pd.DataFrame, neg_df: pd.DataFrame):
         # set the class labels
         pos_df.loc[:, '__class'] = 1
         neg_df.loc[:, '__class'] = 0
 
         # merge the pos and neg dataframes, we don't need to shuffle it here
         # since we can do that with the dataloader
-        return pd.concat([pos_df, neg_df], ignore_index=True).reset_index(drop=True)
+        return pd.concat([pos_df, neg_df], ignore_index=True)
 
-    def _load_img(img_path):
+    def _load_img(self, img_path):
         with open(img_path, "rb") as f:
             img = Image.open(f)
             return img.convert("RGB")
@@ -44,9 +45,9 @@ class ImpromptuDataset(Dataset):
         )
 
     def __len__(self):
-        return len(self.merged_data)
+        return len(self.path_list)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx):        
         image = self._load_img(self.path_list[idx])
         label = self.label_list[idx]
 
@@ -120,7 +121,7 @@ def get_augment_list(param_dict: dict):
             else:
                 augment_list.append(
                     v2.RandomApply(
-                        func(**func_params),
+                        [func(**func_params)],
                         p=prob
                     )
                 )

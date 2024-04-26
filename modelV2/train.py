@@ -5,6 +5,7 @@ import torch
 from tqdm import tqdm
 from pathlib import Path
 from dataclasses import dataclass
+import timm
 from torchmetrics import MetricCollection
 from torchmetrics.classification import Accuracy, AUROC, F1Score, Precision, Recall
 
@@ -250,14 +251,14 @@ def format_metrics_dict(loss, metrics_dict, set_name: str):
 
     return out_metrics_dict
 
-def tuning_wrapper(learning_rate, model_func, device, loader_dict, kwargs, n_epochs: int, 
-                   save_dir: str or None, monitor_metric: str, seed: int = 13):
+def tuning_wrapper(model_type, device, loader_dict, kwargs, n_epochs: int, 
+                   save_dir: str or None, monitor_metric: str, seed: int = 13, last_phase: str = 'test'):
     seed_torch(seed)
+
+    learning_rate = kwargs.pop('learning_rate')
     
     # define model
-    model = model_func(
-        **kwargs
-    )
+    model = timm.create_model(model_type, pretrained=True, num_classes=1)
     model = model.to(device)
 
     # define metric collection
@@ -286,6 +287,7 @@ def tuning_wrapper(learning_rate, model_func, device, loader_dict, kwargs, n_epo
         optimizer=optimizer, 
         n_epochs=n_epochs, 
         save_dir=save_dir,
-        monitor_metric=monitor_metric
+        monitor_metric=monitor_metric,
+        last_phase=last_phase
     )
     return history
