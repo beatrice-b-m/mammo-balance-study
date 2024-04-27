@@ -5,6 +5,8 @@ import torch
 from tqdm import tqdm
 from pathlib import Path
 from dataclasses import dataclass
+import logging
+logging.getLogger('timm').setLevel(logging.WARNING)
 import timm
 from torchmetrics import MetricCollection
 from torchmetrics.classification import Accuracy, AUROC, F1Score, Precision, Recall

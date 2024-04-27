@@ -3,6 +3,7 @@ import pandas as pd
 from bayes_opt import BayesianOptimization
 import json
 import logging
+import os
 from modelV2.data import ImpromptuDataset, get_augment_list
 from modelV2.balancer import DataBalancer
 # from dataclasses import dataclass
@@ -32,6 +33,9 @@ class HyperParamOptimizer:
         self.batch_size = None
         self.transform = None
         self.bootstrap_prop = None
+
+        self.run_num = 0
+        self.boot_num = 0
 
         # df_pool_dict should look like:
         # {
@@ -129,6 +133,21 @@ class HyperParamOptimizer:
         pos_test = self.df_pool_dict['pos']['test']
         neg_test = self.df_pool_dict['neg']['test']
 
+        # log dataframes to track their distributions
+        df_dict = {
+            "pos": {
+                "train": pos_train,
+                "val": pos_val,
+                "test": pos_test
+            },
+            "neg": {
+                "train": neg_train,
+                "val": neg_val,
+                "test": neg_test
+            }
+        }
+        self.log_demographics(df_dict)
+
         train_ds = ImpromptuDataset(
             {'pos':pos_train, 'neg':neg_train}, 
             img_col=img_col, 
@@ -164,7 +183,7 @@ class HyperParamOptimizer:
         balancer.set_target(neg_df)
 
         # select features
-        feature_list = ['tissueden', 'ViewPosition', 'Ethnicity', 'Race']
+        feature_list = ['tissueden', 'ViewPosition', 'Race']
         balancer.set_feature_list(feature_list)
 
         # set a 1:1 balance
@@ -189,12 +208,15 @@ class HyperParamOptimizer:
             size=self.n_bootstraps
         )
 
+        self.run_num += 1
+
         print(f'running {self.n_bootstraps} bootstraps...')
         print(f'with seeds: {bootstrap_seeds}')
 
         run_evals = []
 
         for i, seed in enumerate(bootstrap_seeds):
+            self.boot_num = i
 
             loader_dict = self._get_bootstrap_dataloader(seed)
 
@@ -226,6 +248,34 @@ class HyperParamOptimizer:
         # log hyperparameter combination and eval metric (and if it's the final run)
         log_data(kwargs, history[-1].test)
         return eval_metric
+    
+    def get_demographic_dict(self, df):
+        out_dict = dict()
+
+        for feature in ['tissueden', 'ViewPosition', 'Race']:
+            out_dict[feature] = dict(df[feature].value_counts())
+
+        return out_dict
+    
+    def log_demographics(self, df_dict):
+        out_dict = dict()
+
+        for label_name, label_dict in df_dict.items():
+            out_label_dict = dict()
+
+            for set_name, set_df in label_dict.items():
+                out_label_dict[set_name] = self.get_demographic_dict(set_df)
+
+            out_dict[label_name] = out_label_dict
+
+        # write out_dict to a json file
+        dirname = f"./logs/{model_name}"
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+        
+        filename = f"demo_run{self.run_num}_boot{self.boot_num}.json"
+        with open(os.path.join(dirname, filename), 'w') as f:
+            json.dump(out_dict, f)
 
 def log_data(param_dict, metric_dict, final: bool = False):
     # build the output dict
