@@ -239,10 +239,10 @@ class HyperParamOptimizer:
             last_phase="val" # tune on the validation set so we don't overfit to test set
         )
         # it's still called .test tho... so still load it the same way so i don't have to change all the code
-        eval_metric = history[-1].test[self.test_monitor_metric]
+        eval_metric = history[-1].test[self.val_monitor_metric]
         
         # if using loss, multiply by -1 so we can maximize it
-        if self.test_monitor_metric.split('_')[-1] == "loss":
+        if self.val_monitor_metric.split('_')[-1] == "loss":
             eval_metric *= -1
         
         # log hyperparameter combination and eval metric (and if it's the final run)

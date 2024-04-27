@@ -114,13 +114,13 @@ def train_model(device, model, loader_dict, metric_collection, criterion,
                     # get checkpoint
                     torch.save(model.state_dict(), model_save_path)
 
-        # load the best model so far
-        model.load_state_dict(torch.load(model_save_path))
-        print('best model loaded...')
-
         # on last epoch, perform final val phase
         # i normally do the test set here but
         if epoch == n_epochs - 1:
+            # load the best model so far
+            model.load_state_dict(torch.load(model_save_path))
+            print('best model loaded...')
+            
             phase_metrics_dict = epoch_phase(
                 phase=last_phase,
                 device=device,
