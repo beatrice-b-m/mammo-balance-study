@@ -34,6 +34,9 @@ class HyperParamOptimizer:
         self.transform = None
         self.bootstrap_prop = None
 
+        self.tune_logger = None
+        self.demo_logger = None
+
         self.run_num = 0
         self.boot_num = 0
 
@@ -63,20 +66,41 @@ class HyperParamOptimizer:
     def set_model(self, device, model_type):        
         self.device = device
         self.model_type = model_type
+
+    def start_loggers(self, log_path, demo_log_path):
+        # Configure the first logger
+        self.tune_logger = logging.getLogger('tuning')
+        self.tune_logger.setLevel(logging.INFO)  # Set the log level to INFO
+        file_handler1 = logging.FileHandler(log_path)  # Log to a file named logfile1.log
+        file_handler1.setFormatter(logging.Formatter('%(message)s'))
+        self.tune_logger.addHandler(file_handler1)
+        
+        # Configure the second logger
+        self.demo_logger = logging.getLogger('demographics')
+        self.demo_logger.setLevel(logging.INFO)  # Set the log level to INFO
+        file_handler2 = logging.FileHandler(demo_log_path)  # Log to a file named logfile2.log
+        file_handler2.setFormatter(logging.Formatter('%(message)s'))
+        self.demo_logger.addHandler(file_handler2)
                 
     def optimize(self, objective, n_random: int, n_guided: int, model_name: str):
+        self.model_name = model_name
+        
         # set the seed at the start of the optimization so each sequential 
         # generation is reproducible
         np.random.seed(self.seed)
 
         # set objective function
         self.objective_function = objective
+
+        dirname = f"./logs/{self.model_name}"
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+
+        log_path = os.path.join(dirname, 'opt_log.json')
+        demo_log_path = os.path.join(dirname, 'demographics.json')
         
-        log_path = f"./logs/{model_name}_opt.json"
-        self.model_name = model_name
-        
-        # start the logger
-        logging.basicConfig(filename=log_path, level=logging.INFO, format='%(message)s')
+        # start the loggers
+        self.start_loggers(log_path, demo_log_path)
         
         print(f"\nOptimizing model {'-'*60}")
         print(f"Logging results to '{log_path}'")
@@ -111,7 +135,7 @@ class HyperParamOptimizer:
             **best_param_dict
         )
         
-        log_data(best_param_dict, metrics_dict.test, final=True)
+        log_data(self.tune_logger, best_param_dict, metrics_dict.test, final=True)
 
     def _get_bootstrap_dataloader(self, seed, img_col: str = '__target_path'):
         # calculate the set size based on the chosen bootstrap proportion
@@ -134,19 +158,20 @@ class HyperParamOptimizer:
         neg_test = self.df_pool_dict['neg']['test']
 
         # log dataframes to track their distributions
-        df_dict = {
-            "pos": {
-                "train": pos_train,
-                "val": pos_val,
-                "test": pos_test
-            },
-            "neg": {
-                "train": neg_train,
-                "val": neg_val,
-                "test": neg_test
-            }
-        }
-        self.log_demographics(df_dict)
+        # FIX THIS BUT NO TIME ATM !!!
+        # df_dict = {
+        #     "pos": {
+        #         "train": pos_train,
+        #         "val": pos_val,
+        #         "test": pos_test
+        #     },
+        #     "neg": {
+        #         "train": neg_train,
+        #         "val": neg_val,
+        #         "test": neg_test
+        #     }
+        # }
+        # self.log_demographics(df_dict)
 
         train_ds = ImpromptuDataset(
             {'pos':pos_train, 'neg':neg_train}, 
@@ -184,6 +209,12 @@ class HyperParamOptimizer:
 
         # select features
         feature_list = ['tissueden', 'ViewPosition', 'Race']
+
+        # cast all feature cols to strings
+        for feature in feature_list:
+            pos_df[feature] = pos_df[feature].astype(str)
+            neg_df[feature] = neg_df[feature].astype(str)
+            
         balancer.set_feature_list(feature_list)
 
         # set a 1:1 balance
@@ -246,7 +277,7 @@ class HyperParamOptimizer:
             eval_metric *= -1
         
         # log hyperparameter combination and eval metric (and if it's the final run)
-        log_data(kwargs, history[-1].test)
+        log_data(self.tune_logger, kwargs, history[-1].test)
         return eval_metric
     
     def get_demographic_dict(self, df):
@@ -268,16 +299,33 @@ class HyperParamOptimizer:
 
             out_dict[label_name] = out_label_dict
 
-        # write out_dict to a json file
-        dirname = f"./logs/{model_name}"
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-        
-        filename = f"demo_run{self.run_num}_boot{self.boot_num}.json"
-        with open(os.path.join(dirname, filename), 'w') as f:
-            json.dump(out_dict, f)
+        # convert the dict to a json string
+        json_dict_str = json.dumps({
+            'run_num': int(self.run_num), 
+            'boot_num': int(self.boot_num),
+            'demographics': out_dict
+        }, cls=NumpyEncoder)
 
-def log_data(param_dict, metric_dict, final: bool = False):
+        self.demo_logger.info(json_dict_str)
+
+        # # write out_dict to a json file
+        # dirname = f"./logs/{self.model_name}"
+        # if not os.path.exists(dirname):
+        #     os.makedirs(dirname)
+        
+        # filename = f"demo_run{self.run_num}_boot{self.boot_num}.json"
+        # filename = 'demographics.json'
+        # with open(os.path.join(dirname, filename), 'a') as f:
+        #     json.dump(json_dict_str, f)
+
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.int64):
+            return int(obj)
+        # Let the base class default method raise the TypeError
+        return json.JSONEncoder.default(self, obj)
+
+def log_data(logger, param_dict, metric_dict, final: bool = False):
     # build the output dict
     log_dict = {"final": final, "params": param_dict}
     # log_dict.update(param_dict)
@@ -287,5 +335,5 @@ def log_data(param_dict, metric_dict, final: bool = False):
     json_str = json.dumps(log_dict)
     
     # log the json string
-    logging.info(json_str)
+    logger.info(json_str)
     print("Results logged...")

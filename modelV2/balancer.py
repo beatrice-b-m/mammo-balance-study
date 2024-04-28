@@ -35,7 +35,7 @@ class DataBalancer:
         # normalize the target ratio so the reference is treated as 1
         # and the ratio is 1:target_ratio 
         self.target_ratio = target_ratio / reference_ratio
-        print(f"balancing data with 1.00 : {self.target_ratio:.2f} ratio\n")
+        # print(f"balancing data with 1.00 : {self.target_ratio:.2f} ratio\n")
 
     def get_unique_levels(self):
         assert self.reference_df is not None, "please select a reference dataframe with self.set_reference() first !"
@@ -47,8 +47,6 @@ class DataBalancer:
 
         self.level_dict = level_dict
 
-        print(self.level_dict)
-
     def measure_slices(self):
         assert self.level_dict is not None, "please run self.get_unique_levels() first !"
 
@@ -58,7 +56,7 @@ class DataBalancer:
             feature_level_dict=dict(zip(list(self.level_dict.keys()), feature_levels))
 
             # format the current feature level dict into a query and subset the reference df with it
-            data_query = ' and '.join(["{} == '{}'".format(k,v) for k,v in feature_level_dict.items()])   
+            data_query = ' and '.join(["{} == '{}'".format(k,v) for k,v in feature_level_dict.items()])
             # then get its length and save it as the reference n in the current DataSlice 
             reference_n = len(self.reference_df.query(data_query))
 
@@ -67,7 +65,6 @@ class DataBalancer:
                 reference_n=reference_n
             ))
 
-        print(self.slice_list)
         
     def coerce_to_strings(self):
         assert self.target_df is not None
@@ -93,6 +90,7 @@ class DataBalancer:
             
             # get the reference n and correct it if it's bigger than
             ref_n = data_slice.reference_n
+            
             if ref_n > len(target_subset_df):
                 ref_n = len(target_subset_df)
                             
@@ -107,12 +105,10 @@ class DataBalancer:
             )
             data_slice.target_n = len(data_slice.target_slice)
 
-        print(self.slice_list)
-
     def merge_slices(self):
         # filter out data slices without a dataframe
         valid_slices = [data_slice for data_slice in self.slice_list if data_slice.target_slice is not None]
-        assert len(valid_slices) > 0, "please run self.sample_slices() first !"
+        assert len(valid_slices) > 0, f"no valid slices found in {valid_slices} please run self.sample_slices() first !"
 
         # merge each of the target slices
         balanced_target_df = pd.concat([data_slice.target_slice for data_slice in valid_slices], axis=0)

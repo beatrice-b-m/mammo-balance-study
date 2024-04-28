@@ -257,7 +257,7 @@ def tuning_wrapper(model_type, device, loader_dict, kwargs, n_epochs: int,
                    save_dir: str or None, monitor_metric: str, seed: int = 13, last_phase: str = 'test'):
     seed_torch(seed)
 
-    learning_rate = kwargs.pop('learning_rate')
+    learning_rate = kwargs.get('learning_rate', None)
     
     # define model
     model = timm.create_model(model_type, pretrained=True, num_classes=1)

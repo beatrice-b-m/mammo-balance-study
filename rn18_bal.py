@@ -52,7 +52,7 @@ N_GUIDED = 10
 # assign model type and get its name
 MODEL_TYPE = 'resnet18'
 TEST_NUM = 'a'
-BALANCE_DISTRIBUTIONS = False
+BALANCE_DISTRIBUTIONS = True
 
 if BALANCE_DISTRIBUTIONS:
     name_template = "{}_bal_{}"
